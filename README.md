@@ -1,2 +1,2 @@
-# PikCalendar
+# PiCalendar
 kalendarz trello pikczu
