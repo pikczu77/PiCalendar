@@ -1264,3 +1264,4 @@ main .group { margin: 0 var(--gutter); }
 }
 
 .settings .group + .group { margin-top: 16px; }
+.big-btn.secondary { background: var(--fill); color: var(--blue); }

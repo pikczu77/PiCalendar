@@ -9,9 +9,24 @@ Wspólna tablica zadań i kalendarz w stylu iOS — minimalistyczna, płynnie an
 - Wiele tablic (projektów), osoby przypisane do zadań, kolory, listy kontrolne, notatki, filtr „Tylko moje”.
 - Tryb ciemny, PWA (na iPhonie: *Udostępnij → Do ekranu początkowego*), `prefers-reduced-motion`.
 
-## Uruchomienie
+## Wersja bez serwera: Firebase + GitHub Pages (za darmo, działa 24/7)
 
-Wymagany tylko Node.js 18+ — **bez żadnych zależności**, bez budowania.
+Strona leży na GitHub Pages, a dane i synchronizację na żywo trzyma Firestore (darmowy plan Firebase). Nie trzeba mieć włączonego komputera, a aplikacja działa też offline: zmiany wysyłają się po odzyskaniu zasięgu.
+
+1. **Firebase** → [console.firebase.google.com](https://console.firebase.google.com) → *Dodaj projekt* (Google Analytics niepotrzebne).
+2. W projekcie: *Build → Firestore Database → Utwórz bazę danych* → lokalizacja `eur3 (europe-west)` → tryb produkcyjny.
+3. W zakładce **Reguły** wklej całą zawartość pliku [`firestore.rules`](firestore.rules) i kliknij *Opublikuj*.
+4. *Ustawienia projektu (⚙️) → Twoje aplikacje → ikona `</>`* (aplikacja internetowa) → dowolna nazwa, **bez** Firebase Hosting → skopiuj obiekt `firebaseConfig`.
+5. Wklej go do [`public/firebase-config.js`](public/firebase-config.js) zamiast `null` (te wartości nie są tajne).
+6. **GitHub** → repozytorium → *Settings → Pages → Source: GitHub Actions*. Po każdej zmianie na gałęzi `main` strona publikuje się sama pod adresem `https://<użytkownik>.github.io/<repozytorium>/`.
+7. Otwórz ten adres na iPhonie w Safari → *Utwórz przestrzeń zespołu* → wpisz imię → *Udostępnij → Do ekranu początkowego*.
+8. W aplikacji: avatar w prawym górnym rogu → *Udostępnij* → wyślij link osobom z zespołu.
+
+**Bezpieczeństwo:** link do przestrzeni (`?s=…`, 24 losowe znaki) działa jak klucz — kto go ma, może czytać i edytować; bez niego nie da się niczego odczytać ani wylistować. Nie publikuj go publicznie.
+
+## Wersja z własnym serwerem (Node.js)
+
+Gdy `public/firebase-config.js` zawiera `null`, aplikacja używa wbudowanego serwera. Wymagany tylko Node.js 18+ — **bez żadnych zależności**, bez budowania.
 
 ```bash
 npm start          # http://localhost:3000
@@ -44,5 +59,7 @@ Wszystko jest w jednym pliku `data/db.json` (zapisywanym atomowo). Kopia zapasow
 server/index.js   serwer HTTP: REST API, strumień zdarzeń na żywo, pliki statyczne
 server/store.js   model danych, walidacja, historia aktywności, zapis na dysk
 public/           aplikacja (czysty JS w modułach ES, bez frameworka)
+public/js/firebase.js   backend Firebase (Firestore) zamiast serwera
+firestore.rules   reguły bezpieczeństwa Firestore
 test/             testy API (npm test)
 ```

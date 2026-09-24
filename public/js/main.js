@@ -1,13 +1,14 @@
 import { h, icon, avatar, avatarStack, openMenu, toast, reducedMotion } from './ui.js';
 import {
   state, subscribe, loadState, connect, api, me, memberById, currentBoard, setView, setBoard,
-  setErrorHandler, setRemoteHandler, notify,
+  setErrorHandler, setRemoteHandler, notify, setBackend, setMe, storage, usingRemote,
 } from './state.js';
+import { firebaseConfig } from '../firebase-config.js';
 import { mountBoard, renderBoard } from './board.js';
 import { mountCalendar, renderCalendar } from './calendar.js';
 import { mountOverview, renderOverview, describeActivity } from './overview.js';
 import { openCardSheet } from './cardSheet.js';
-import { openSettings, showOnboarding, showPasscode, setReadyHandler, hideGate, newBoardFlow } from './settings.js';
+import { openSettings, showOnboarding, showPasscode, showSpaceGate, setSpaceId, setReadyHandler, hideGate, newBoardFlow } from './settings.js';
 
 const TITLES = { board: 'Tablica', calendar: 'Kalendarz', overview: 'Przegląd' };
 const $ = (id) => document.getElementById(id);
@@ -110,6 +111,7 @@ function renderChrome() {
   presence.replaceChildren(others.length ? avatarStack(others, 26, 3) : '');
   presence.title = others.length ? `Teraz online: ${others.map((m) => m.name).join(', ')}` : '';
   $('offline').hidden = state.connected;
+  $('offline').textContent = usingRemote() ? 'Offline — zmiany zapiszą się po połączeniu' : 'Łączenie z serwerem…';
 }
 
 let lastView = null;
@@ -145,19 +147,51 @@ async function start() {
   notify('data');
 }
 
+function showFatal(title, message) {
+  $('gate').replaceChildren(h('div.gate.in', h('div.gate-card',
+    h('h1', title),
+    h('p.muted', message),
+    h('button.big-btn', { type: 'button', onclick: () => location.reload() }, 'Spróbuj ponownie'))));
+}
+
+/** Firebase mode: pick (or create) the team space, then subscribe to it. */
+async function bootFirebase(config) {
+  const fb = await import('./firebase.js');
+  await fb.initFirebase(config);
+  const fromUrl = new URLSearchParams(location.search).get('s');
+  let spaceId = fromUrl && fb.SPACE_RE.test(fromUrl) ? fromUrl : storage.get('pical.space');
+  if (!spaceId || !fb.SPACE_RE.test(spaceId)) spaceId = await showSpaceGate(fb);
+  if (spaceId !== storage.get('pical.space')) {
+    // Different team: forget who we were in the previous one.
+    if (storage.get('pical.space')) setMe(null);
+    storage.set('pical.space', spaceId);
+  }
+  setSpaceId(spaceId);
+  // Keep the space in the URL so "Add to Home Screen" on iPhone opens the same team.
+  const url = new URL(location.href);
+  url.searchParams.set('s', spaceId);
+  history.replaceState(null, '', url);
+  setBackend(fb.firebaseBackend);
+  await fb.openSpace(spaceId);
+}
+
 async function boot() {
   setErrorHandler((err) => toast(err.message, { tone: 'error' }));
   setRemoteHandler(onRemote);
   setReadyHandler(start);
   try {
-    const session = await api('GET', '/session');
-    if (session.authRequired && !session.authed) await showPasscode();
-    await loadState();
+    if (firebaseConfig) {
+      await bootFirebase(firebaseConfig);
+    } else {
+      const session = await api('GET', '/session');
+      if (session.authRequired && !session.authed) await showPasscode();
+      await loadState();
+    }
   } catch (err) {
-    $('gate').replaceChildren(h('div.gate.in', h('div.gate-card',
-      h('h1', 'Brak połączenia'),
-      h('p.muted', err.message),
-      h('button.big-btn', { type: 'button', onclick: () => location.reload() }, 'Spróbuj ponownie'))));
+    console.error(err);
+    const denied = err?.code === 'permission-denied';
+    showFatal(denied ? 'Brak dostępu do danych' : 'Brak połączenia',
+      denied ? 'Sprawdź reguły Firestore (plik firestore.rules) w konsoli Firebase.' : err.message);
     return;
   }
   if (!me()) {

@@ -5,6 +5,18 @@ import {
   setBoard, setMe, subscribe,
 } from './state.js';
 
+let spaceId = null;
+export function setSpaceId(id) {
+  spaceId = id;
+}
+
+/** Link other people open to join: includes the team space in Firebase mode. */
+function shareUrl() {
+  const url = new URL(location.origin + location.pathname);
+  if (spaceId) url.searchParams.set('s', spaceId);
+  return url.toString();
+}
+
 const EMOJIS = ['📋', '🚀', '🏠', '💼', '🎨', '🛠️', '📚', '🎉', '🌱', '🧪', '✈️', '🍕', '💡', '🎯', '🏃', '❤️'];
 
 function colorPicker(value, onPick) {
@@ -100,13 +112,15 @@ export function openSettings() {
     boards,
     h('div.group-label', 'Udostępnianie'),
     h('div.group.padded.help',
-      h('p', 'Wyślij innym adres tej strony — każdy wpisuje swoje imię i od razu widzi zmiany na żywo.'),
+      h('p', spaceId
+        ? 'Wyślij ten link osobom z zespołu — każdy wpisuje swoje imię i od razu widzi zmiany na żywo. Link działa jak klucz: kto go ma, ma dostęp.'
+        : 'Wyślij innym adres tej strony — każdy wpisuje swoje imię i od razu widzi zmiany na żywo.'),
       h('div.share-row',
-        h('code.share-url', location.origin + location.pathname),
+        h('code.share-url', shareUrl()),
         h('button.pill-btn.accent', {
           type: 'button',
           onclick: async () => {
-            const url = location.origin + location.pathname;
+            const url = shareUrl();
             try {
               if (navigator.share) await navigator.share({ title: 'PiCalendar', url });
               else {
@@ -254,4 +268,58 @@ export function showOnboarding() {
     existing,
   ]);
   setTimeout(() => input.focus(), 350);
+}
+
+/** Firebase mode, first launch: create a new team space or join one with a link/code. */
+export function showSpaceGate(fb) {
+  return new Promise((resolve) => {
+    const error = h('div.gate-error');
+    const input = h('input.text-input.center', { type: 'text', placeholder: 'Wklej link lub kod', autocapitalize: 'off', autocorrect: 'off', spellcheck: false, 'aria-label': 'Link lub kod zespołu' });
+    const create = h('button.big-btn', { type: 'button' }, 'Utwórz przestrzeń zespołu');
+    const join = h('button.big-btn.secondary', { type: 'button' }, 'Dołącz');
+    const busy = (on) => {
+      create.disabled = on;
+      join.disabled = on;
+    };
+    create.addEventListener('click', async () => {
+      busy(true);
+      error.textContent = '';
+      try {
+        resolve(await fb.createSpace());
+      } catch (err) {
+        console.error(err);
+        error.textContent = err.code === 'permission-denied' ? 'Brak dostępu — sprawdź reguły Firestore.' : 'Nie udało się utworzyć przestrzeni. Sprawdź połączenie.';
+        busy(false);
+      }
+    });
+    const tryJoin = async () => {
+      const raw = input.value.trim();
+      const code = (raw.match(/[?&]s=([A-Za-z0-9_-]+)/) || [null, raw])[1];
+      error.textContent = '';
+      if (!fb.SPACE_RE.test(code)) {
+        error.textContent = 'To nie wygląda na link ani kod zespołu.';
+        return;
+      }
+      busy(true);
+      try {
+        if (await fb.spaceExists(code)) resolve(code);
+        else error.textContent = 'Nie znaleziono takiej przestrzeni.';
+      } catch {
+        error.textContent = 'Nie udało się sprawdzić kodu. Sprawdź połączenie.';
+      }
+      busy(false);
+    };
+    join.addEventListener('click', tryJoin);
+    input.addEventListener('keydown', (e) => e.key === 'Enter' && tryJoin());
+    showGate([
+      h('img.gate-icon', { src: 'icon.svg', alt: '' }),
+      h('h1', 'PiCalendar'),
+      h('p.muted', 'Wspólna tablica i kalendarz dla Twojego zespołu. Zacznij od nowej przestrzeni albo dołącz do istniejącej.'),
+      create,
+      error,
+      h('div.group-label', 'Masz link od zespołu?'),
+      h('div.group.title-group', input),
+      join,
+    ]);
+  });
 }

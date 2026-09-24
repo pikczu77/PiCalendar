@@ -13,7 +13,7 @@ export function uid() {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_');
 }
 
-const storage = {
+export const storage = {
   get(key) {
     try { return localStorage.getItem(key); } catch { return null; }
   },
@@ -142,7 +142,17 @@ export async function api(method, path, body) {
   return data;
 }
 
-/** Runs a mutation; on failure reports it and re-syncs to the server's truth. */
+/**
+ * Optional alternative backend (Firebase). When set, writes go there and its
+ * realtime listeners keep `state` up to date instead of the Node API + SSE.
+ */
+let remote = null;
+export function setBackend(backend) {
+  remote = backend;
+}
+export const usingRemote = () => Boolean(remote);
+
+/** Runs a Node API mutation; on failure reports it and re-syncs to the server's truth. */
 async function mutate(method, path, body) {
   try {
     return await api(method, path, body);
@@ -153,7 +163,18 @@ async function mutate(method, path, body) {
   }
 }
 
+/** Runs a Firebase write; a rejected write is rolled back by its listeners. */
+async function write(promise) {
+  try {
+    return await promise;
+  } catch (err) {
+    onError(err);
+    throw err;
+  }
+}
+
 export async function loadState() {
+  if (remote) return null;
   const data = await api('GET', '/state');
   state.boards = data.boards;
   state.members = data.members;
@@ -179,6 +200,10 @@ function pushActivity(item) {
   if (state.activity.length > 100) state.activity.length = 100;
 }
 
+function nextOrder(boardId, status) {
+  return Math.max(0, ...state.cards.filter((c) => c.boardId === boardId && c.status === status).map((c) => c.order)) + 1;
+}
+
 // ---------- mutations (optimistic) ----------
 
 export function createCard(fields) {
@@ -196,15 +221,17 @@ export function createCard(fields) {
     color: fields.color || null,
     assignees: fields.assignees || [],
     checklist: fields.checklist || [],
-    order: Math.max(0, ...state.cards.filter((c) => c.boardId === boardId && c.status === status).map((c) => c.order)) + 1,
+    order: nextOrder(boardId, status),
     createdAt: now,
     updatedAt: now,
     createdBy: state.meId,
     updatedBy: state.meId,
     doneAt: status === 'done' ? now : null,
   };
+  if (card.start && card.due && card.start > card.due) card.start = card.due;
   state.cards.push(card);
   notify('data');
+  if (remote) return write(remote.createCard(card));
   const { createdAt, updatedAt, createdBy, updatedBy, doneAt, ...payload } = card;
   return mutate('POST', '/cards', payload);
 }
@@ -212,16 +239,24 @@ export function createCard(fields) {
 export function updateCard(id, patch) {
   const card = cardById(id);
   if (!card) return Promise.resolve();
+  const prev = { ...card };
   const now = new Date().toISOString();
-  if (patch.status && patch.status !== card.status) card.doneAt = patch.status === 'done' ? now : null;
-  Object.assign(card, patch, { updatedAt: now, updatedBy: state.meId });
+  if (patch.status && patch.status !== card.status && !('order' in patch)) {
+    patch = { ...patch, order: nextOrder(patch.boardId || card.boardId, patch.status) };
+  }
+  const derived = { updatedAt: now, updatedBy: state.meId };
+  if (patch.status && patch.status !== card.status) derived.doneAt = patch.status === 'done' ? now : null;
+  Object.assign(card, patch, derived);
   notify('data');
+  if (remote) return write(remote.updateCard(id, { ...patch, ...derived }, prev, card));
   return mutate('PATCH', `/cards/${id}`, patch);
 }
 
 export function deleteCard(id) {
+  const card = cardById(id);
   state.cards = state.cards.filter((c) => c.id !== id);
   notify('data');
+  if (remote) return card ? write(remote.deleteCard(card)) : Promise.resolve();
   return mutate('DELETE', `/cards/${id}`);
 }
 
@@ -229,7 +264,8 @@ export async function createBoard(fields) {
   const board = { id: uid(), emoji: '📋', color: 'blue', ...fields, createdAt: new Date().toISOString() };
   state.boards.push(board);
   notify('data');
-  await mutate('POST', '/boards', board);
+  if (remote) await write(remote.createBoard(board));
+  else await mutate('POST', '/boards', board);
   return board;
 }
 
@@ -237,19 +273,29 @@ export function updateBoard(id, patch) {
   const board = boardById(id);
   if (board) Object.assign(board, patch);
   notify('data');
+  if (remote) return write(remote.updateBoard(id, patch));
   return mutate('PATCH', `/boards/${id}`, patch);
 }
 
 export function deleteBoard(id) {
+  const board = boardById(id);
+  const cardIds = state.cards.filter((c) => c.boardId === id).map((c) => c.id);
   state.boards = state.boards.filter((b) => b.id !== id);
   state.cards = state.cards.filter((c) => c.boardId !== id);
   if (state.boardId === id) setBoard('all');
   notify('data');
+  if (remote) return board ? write(remote.deleteBoard(board, cardIds)) : Promise.resolve();
   return mutate('DELETE', `/boards/${id}`);
 }
 
 export async function createMember(fields) {
-  const member = await api('POST', '/members', { id: uid(), ...fields });
+  let member;
+  if (remote) {
+    member = { id: uid(), name: fields.name.trim().slice(0, 40), color: fields.color, createdAt: new Date().toISOString() };
+    await write(remote.createMember(member));
+  } else {
+    member = await api('POST', '/members', { id: uid(), ...fields });
+  }
   upsert(state.members, member);
   setMe(member.id);
   return member;
@@ -259,6 +305,7 @@ export function updateMember(id, patch) {
   const member = memberById(id);
   if (member) Object.assign(member, patch);
   notify('data');
+  if (remote) return write(remote.updateMember(id, patch));
   return mutate('PATCH', `/members/${id}`, patch);
 }
 
@@ -303,6 +350,10 @@ function applyEvent(ev) {
 }
 
 export function connect() {
+  if (remote) {
+    remote.listen(onRemote);
+    return;
+  }
   if (source) source.close();
   const params = new URLSearchParams({ client: clientId });
   if (state.meId) params.set('member', state.meId);

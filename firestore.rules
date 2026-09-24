@@ -1,0 +1,47 @@
+rules_version = '2';
+
+// PiCalendar: every team's data lives under spaces/{spaceId}/{boards|cards|members|activity}/{id}.
+// The space id is a long random value shared only through the team's link, so it acts as the key:
+// nobody can list spaces, and you need the exact id to read or write anything inside one.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function validSpace(space) {
+      return space.size() >= 20 && space.size() <= 64;
+    }
+
+    function text(v, min, max) {
+      return v is string && v.size() >= min && v.size() <= max;
+    }
+
+    function optText(d, key, max) {
+      return !(key in d) || d[key] == null || text(d[key], 0, max);
+    }
+
+    function validDoc(coll, d) {
+      return d.keys().size() <= 30 && (
+        (coll == 'cards'
+          && text(d.title, 1, 200)
+          && text(d.notes, 0, 5000)
+          && d.status in ['planned', 'doing', 'done']
+          && text(d.boardId, 1, 64)
+          && d.order is number
+          && d.assignees is list && d.assignees.size() <= 30
+          && d.checklist is list && d.checklist.size() <= 100
+          && optText(d, 'start', 10) && optText(d, 'due', 10) && optText(d, 'color', 10))
+        || (coll == 'boards' && text(d.name, 1, 60) && optText(d, 'emoji', 16) && optText(d, 'color', 10))
+        || (coll == 'members' && text(d.name, 1, 40) && optText(d, 'color', 10))
+        || (coll == 'activity' && text(d.kind, 1, 20) && text(d.title, 0, 200))
+      );
+    }
+
+    match /spaces/{space}/{coll}/{id} {
+      allow get, list: if validSpace(space);
+      allow create, update: if validSpace(space)
+        && coll in ['boards', 'cards', 'members', 'activity']
+        && request.resource.data.id == id
+        && validDoc(coll, request.resource.data);
+      allow delete: if validSpace(space) && coll in ['boards', 'cards', 'activity'];
+    }
+  }
+}
