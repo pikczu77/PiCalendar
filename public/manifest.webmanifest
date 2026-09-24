@@ -1,0 +1,14 @@
+{
+  "name": "PiCalendar",
+  "short_name": "PiCalendar",
+  "description": "Wspólna tablica zadań i kalendarz zespołu.",
+  "lang": "pl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2f2f7",
+  "theme_color": "#f2f2f7",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "picalendar",
+  "version": "1.0.0",
+  "description": "Wspólna tablica zadań i kalendarz w stylu iOS: co jest zaplanowane, co w trakcie, co gotowe.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "license": "MIT"
+}

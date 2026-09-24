@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="PiCalendar">
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Wspólna tablica zadań i kalendarz zespołu.">
+  <title>PiCalendar</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app" hidden>
+    <header class="navbar" id="navbar">
+      <div class="navbar-left">
+        <button class="nav-btn icon-btn" id="addBtn" aria-label="Nowe zadanie"></button>
+      </div>
+      <div class="navbar-title" id="navTitleSmall"></div>
+      <div class="navbar-right">
+        <div class="presence" id="presence" aria-label="Kto jest online"></div>
+        <button class="avatar-btn" id="meBtn" aria-label="Twój profil i ustawienia"></button>
+      </div>
+    </header>
+
+    <div class="offline-banner" id="offline" hidden>Łączenie z serwerem…</div>
+
+    <main id="main">
+      <section class="view" id="view-board" data-view="board"></section>
+      <section class="view" id="view-calendar" data-view="calendar" hidden></section>
+      <section class="view" id="view-overview" data-view="overview" hidden></section>
+    </main>
+
+    <nav class="tabbar" id="tabbar" aria-label="Widoki">
+      <button class="tab" data-tab="board"><span class="tab-icon" data-icon="board"></span><span>Tablica</span></button>
+      <button class="tab" data-tab="calendar"><span class="tab-icon" data-icon="calendar"></span><span>Kalendarz</span></button>
+      <button class="tab" data-tab="overview"><span class="tab-icon" data-icon="overview"></span><span>Przegląd</span></button>
+    </nav>
+  </div>
+
+  <div id="gate"></div>
+  <div id="layers"></div>
+  <div id="toasts" aria-live="polite"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
